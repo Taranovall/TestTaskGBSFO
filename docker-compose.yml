@@ -1,0 +1,78 @@
+version: '3.9'
+services:
+  postgres:
+    container_name: "postgres"
+    image: postgres
+    networks:
+      - mynetwork
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: gbsfo
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+      - ./OrderManagement/sql:/var/lib/postgresql/sql
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  
+  myapp:
+    container_name: "rest-api"
+    image: rest-api
+    build: ./OrderManagement
+    networks:
+      - mynetwork
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      JAVA_SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/gbsfo
+      JAVA_SPRING_DATASOURCE_USERNAME: postgres
+      JAVA_SPRING_DATASOURCE_PASSWORD: postgres
+    ports:
+      - "8080:8080"
+  kafka-listener:
+    container_name: "listener"
+    image: listener
+    build: ./MessageListener
+    networks:
+      - mynetwork
+    depends_on:
+      - myapp
+    environment:
+      JAVA_SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/gbsfo
+      JAVA_SPRING_DATASOURCE_USERNAME: postgres
+      JAVA_SPRING_DATASOURCE_PASSWORD: postgres
+    ports:
+      - "8081:8081"
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    networks:
+      - mynetwork
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    networks:
+      - mynetwork
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+networks:
+  mynetwork:
